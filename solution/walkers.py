@@ -15,5 +15,10 @@ def generate_walkers(num_walkers, R, rng):
 
     return walkers
 
-def diffuse():
-    return None
+def diffuse(walkers, D, dt, rng):
+    """
+    Returns the walker array after one time step
+    """
+    displacements = rng.normal(loc=0.0, scale=np.sqrt(2 * D * dt), size=walkers.shape)
+    walkers += displacements
+    return walkers
