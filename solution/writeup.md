@@ -1,6 +1,4 @@
-# Critical Spheres: Solution
-
-<!-- One-paragraph summary of the approach and the answer. -->
+# Critical Spheres Solution
 
 ## 1. Derivation
 
@@ -50,17 +48,16 @@ R_{crit} = \sqrt{\frac{D}{\beta(\nu - 1) - \alpha}}
 ```
 
 ### Dimensional analysis
-This isn't a true derivation. It's done with dimensional analysis and approximation, and we dropped some constant factors along the way, so it gets the form right but not the number. However, $D$ and $\sigma_{prod}$ can only combine into one length, $\sqrt{D/\sigma_{prod}}$, so whatever we dropped is a pure number $c$:
+This isn't a true derivation. It's done with dimensional analysis and approximation, and we dropped some constant factors along the way. It gets the form right but not the number. However, $D$ and $\sigma_{prod}$ can only combine into one length, $\sqrt{D/\sigma_{prod}}$, so whatever we dropped is a pure constant $c$:
 
 ```math
 R_{crit} = c\,\sqrt{\frac{D}{\beta(\nu - 1) - \alpha}}
 ```
 
-$c$ depends on the shape of the region and we can find it with computational analysis.
+$c$ depends on the shape of the region and we can find it with a Monte Carlo method.
 
 ## 2. Computing c
 
-<!-- Simulate pure random walkers -->
 
 ### Check: escape rate scales as D / R^2
 
