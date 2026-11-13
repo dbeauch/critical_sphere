@@ -1,6 +1,7 @@
 import numpy as np
+import pytest
 
-from walkers import generate_walkers, diffuse, remove_external_walkers
+from walkers import generate_walkers, diffuse, remove_external_walkers, resample, fit_growth_rate
 
 def test_generate_walkers():
     rng = np.random.default_rng(seed=535)
@@ -94,6 +95,59 @@ def test_remove_external_walkers_edge_cases():
     empty = remove_external_walkers(np.zeros((0, 3)), R)
     assert empty.shape == (0, 3), "Empty input should return shape (0, 3)"
 
+def labeled_walkers(count):
+    # returns walkers labeled with row index
+    walkers = np.zeros((count, 3))
+    walkers[:, 0] = np.arange(count)
+    return walkers
+
+def test_resample_preserves_population():
+    # log_w + log(len / num_walkers), the log-population, remains invariant
+    rng = np.random.default_rng(seed=535)
+    num_walkers = 1000
+    log_w = 0.7
+
+    for count in (300, 4000):  # below and above the band [num_walkers/2, 2*num_walkers]
+        walkers = labeled_walkers(count)
+        resampled, new_log_w = resample(walkers, num_walkers, log_w, rng)
+
+        assert len(resampled) == num_walkers, "Resampled population != num_walkers"
+        before = log_w + np.log(count / num_walkers)
+        after = new_log_w + np.log(len(resampled) / num_walkers)
+        assert np.isclose(before, after), "Resampling changed log-population"
+
+def test_resample_inside_band():
+    rng = np.random.default_rng(seed=535)
+    num_walkers = 1000
+    log_w = 0.7
+
+    for count in (500, 1000, 2000):  # both band edges count as inside
+        walkers = labeled_walkers(count)
+        resampled, new_log_w = resample(walkers, num_walkers, log_w, rng)
+        assert resampled is walkers, "Population inside the band should be returned unchanged"
+        assert new_log_w == log_w, "log_w should not change inside the band"
+
+def test_resample_extinct():
+    rng = np.random.default_rng(seed=535)
+    with pytest.raises(RuntimeError):
+        resample(np.zeros((0, 3)), 1000, 0.0, rng)
+
+def test_fit_growth_rate_noiseless():
+    # nonzero intercepts since a fit through the origin fails
+    ts = np.linspace(0.3, 1.3, 1001)
+    assert np.isclose(fit_growth_rate(ts, 3.0 - 9.87 * ts), -9.87), "Decaying slope not recovered"
+    assert np.isclose(fit_growth_rate(ts, -2.0 + 1.5 * ts), 1.5), "Growing slope not recovered"
+
+def test_fit_growth_rate_noisy():
+    # Gaussian noise of std s: slope standard error = s / (sqrt(n) * std(t))
+    rng = np.random.default_rng(seed=535)
+    ts = np.linspace(0.3, 1.3, 1001)
+    s = 0.05
+    log_pop = 3.0 - 9.87 * ts + rng.normal(0.0, s, size=ts.size)
+
+    standard_error = s / (np.sqrt(ts.size) * np.std(ts))
+    assert abs(fit_growth_rate(ts, log_pop) - (-9.87)) < 4 * standard_error, "Slope off by more than 4 stde"
+
 if __name__ == "__main__":
     test_generate_walkers()
     test_remove_external_walkers()
@@ -101,5 +155,12 @@ if __name__ == "__main__":
 
     test_diffuse_basic()
     test_diffuse_evolve()
+
+    test_resample_preserves_population()
+    test_resample_inside_band()
+    test_resample_extinct()
+
+    test_fit_growth_rate_noiseless()
+    test_fit_growth_rate_noisy()
     
     print("Tests passed")
