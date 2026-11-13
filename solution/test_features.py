@@ -1,6 +1,6 @@
 import numpy as np
 
-from walkers import generate_walkers, diffuse
+from walkers import generate_walkers, diffuse, remove_external_walkers
 
 def test_generate_walkers():
     rng = np.random.default_rng(seed=535)
@@ -58,8 +58,46 @@ def test_diffuse_evolve():
     mean_r_squared = np.mean(np.sum(walkers**2, axis=1))
     assert abs(mean_r_squared / (6 * D * t) - 1) < 0.03, "<r^2> is not 6Dt"
 
+def test_remove_external_walkers():
+    rng = np.random.default_rng(seed=535)
+    num_walkers = 20000
+    R = 1.0
+    walkers = generate_walkers(num_walkers, R, rng)
+
+    # walkers outside the sphere
+    walkers[0] = np.array([2.0, 0.0, 0.0])
+    walkers[1] = np.array([-2.0, 0.0, 0.0])
+
+    walkers_after_removal = remove_external_walkers(walkers, R)
+
+    assert walkers_after_removal.shape[0] == num_walkers - 2, "Incorrect number of walkers after removal"
+    assert np.all(np.linalg.norm(walkers_after_removal, axis=1) < R), "Walkers outside the sphere remain after removal"
+
+def test_remove_external_walkers_edge_cases():
+    # R = 5 so (3, 4, 0) sits exactly on the surface with no rounding error,
+    # while each of its coordinates is < R (catches per-coordinate checks)
+    R = 5.0
+    walkers = np.array([
+        [0.0, 0.0, 0.0],     # origin: keep
+        [4.999, 0.0, 0.0],   # just inside: keep
+        [2.0, 2.0, 2.0],     # inside on a diagonal : keep
+        [3.0, 4.0, 0.0],     # exactly at R, off-axis: remove (boundary counts as escaped)
+        [0.0, 0.0, -5.0],    # exactly at R, on-axis: remove
+        [4.0, 4.0, 0.0],     # just outside: remove
+        [10.0, 10.0, 10.0],  # far outside: remove
+    ])
+
+    walkers_after_removal = remove_external_walkers(walkers, R)
+    assert np.array_equal(walkers_after_removal, walkers[:3]), "Wrong walkers kept"
+
+    # Empty population comes back empty with the right shape
+    empty = remove_external_walkers(np.zeros((0, 3)), R)
+    assert empty.shape == (0, 3), "Empty input should return shape (0, 3)"
+
 if __name__ == "__main__":
     test_generate_walkers()
+    test_remove_external_walkers()
+    test_remove_external_walkers_edge_cases()
 
     test_diffuse_basic()
     test_diffuse_evolve()

@@ -22,3 +22,10 @@ def diffuse(walkers, D, dt, rng):
     displacements = rng.normal(loc=0.0, scale=np.sqrt(2 * D * dt), size=walkers.shape)
     walkers += displacements
     return walkers
+
+def remove_external_walkers(walkers, R):
+    """
+    Returns walker array with walkers outside R removed
+    """
+    mask = np.linalg.norm(walkers, axis=1) < R
+    return walkers[mask]
