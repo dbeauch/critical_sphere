@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 from walkers import generate_walkers, diffuse, remove_external_walkers, resample, fit_growth_rate
+from estimate_c import escape_rate, extrapolate_dt
 
 def test_generate_walkers():
     rng = np.random.default_rng(seed=535)
@@ -148,6 +149,37 @@ def test_fit_growth_rate_noisy():
     standard_error = s / (np.sqrt(ts.size) * np.std(ts))
     assert abs(fit_growth_rate(ts, log_pop) - (-9.87)) < 4 * standard_error, "Slope off by more than 4 stde"
 
+def test_escape_rate_kill():
+    # wall replaced by kill probability p per step
+    p = 0.01
+    dt = 1e-3
+    rate = escape_rate(dt=dt, num_walkers=2000, seed=535, kill_prob=p)
+    assert abs(rate / (-np.log(1 - p) / dt) - 1) < 0.05, "Kill-mode rate is not -log(1 - p) / dt"
+
+def test_escape_rate_wall():
+    # R = D = 1: time-step bias makes Lambda a bit under pi^2
+    Lambda = escape_rate(R=1.0, D=1.0, dt=1e-3, num_walkers=2000, seed=535)
+    assert 9.0 < Lambda < np.pi**2, "Lambda is not a bit under pi^2"
+
+def test_escape_rate_scaling():
+    # dt = dt_frac * tau and a shared seed: every run is the same walk rescaled, so Lambda agrees exactly
+    dt_frac = 1e-3
+    lambdas = []
+    for R, D in ((1.0, 1.0), (2.0, 1.0), (1.0, 3.0), (0.5, 0.2)):
+        tau = R**2 / D
+        lambdas.append(escape_rate(R=R, D=D, dt=dt_frac * tau, num_walkers=2000, seed=535) * R**2 / D)
+    assert np.allclose(lambdas, lambdas[0]), "Lambda = lambda_esc * R^2 / D depends on (R, D)"
+
+def test_extrapolate_dt():
+    # Lambda rises as dt shrinks, and the dt -> 0 intercept sits above every measured Lambda
+    dts = (4e-3, 2e-3, 1e-3, 5e-4)
+    lambdas = [np.mean([escape_rate(dt=dt, num_walkers=2000, seed=seed) for seed in range(3)]) for dt in dts]
+    assert np.all(np.diff(lambdas) > 0), "Lambda does not rise as dt shrinks"
+
+    Lambda_0, Lambda_0_err = extrapolate_dt(dts=dts, seeds=3, num_walkers=2000)
+    assert Lambda_0 > lambdas[-1], "Extrapolated Lambda_0 is below the finest-dt Lambda"
+    assert Lambda_0_err > 0, "Extrapolation uncertainty is not positive"
+
 if __name__ == "__main__":
     test_generate_walkers()
     test_remove_external_walkers()
@@ -162,5 +194,10 @@ if __name__ == "__main__":
 
     test_fit_growth_rate_noiseless()
     test_fit_growth_rate_noisy()
+
+    test_escape_rate_kill()
+    test_escape_rate_wall()
+    test_escape_rate_scaling()
+    test_extrapolate_dt()
     
     print("Tests passed")
