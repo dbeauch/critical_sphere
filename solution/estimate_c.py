@@ -115,7 +115,7 @@ def extrapolate_dt(dts=(4e-4, 2e-4, 1e-4, 5e-5), seeds=5, num_walkers=20_000, ru
         save_record({"run_id": run_id, "kind": "extrapolate_dt", "dts": list(dts), "seeds": seeds,
                      "num_walkers": num_walkers, "means": means.tolist(), "sem": sem,
                      "slope": slope, "Lambda_0": Lambda_0, "Lambda_0_err": Lambda_0_err})
-    print(f"  fit: Lambda = {Lambda_0:.3f} + ({slope:.1f}) * sqrt(dt)   [wall-shift estimate of slope ~ -16.3]")
+    print(f"  fit: Lambda = {Lambda_0:.3f} + ({slope:.1f}) * sqrt(dt)")
     return Lambda_0, Lambda_0_err
 
 
@@ -124,7 +124,7 @@ if __name__ == "__main__":
 
     # True: small-scale test
     # False: long running for a good estimate of c
-    quick = False
+    quick = True
 
     if quick:
         num_walkers, dts, seeds = 2000, (4e-3, 2e-3, 1e-3, 5e-4), 4
