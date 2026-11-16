@@ -124,12 +124,12 @@ if __name__ == "__main__":
 
     # True: small-scale test
     # False: long running for a good estimate of c
-    quick = True
+    quick = False
 
     if quick:
         num_walkers, dts, seeds = 2000, (4e-3, 2e-3, 1e-3, 5e-4), 4
     else:
-        num_walkers, dts, seeds = 20000, (4e-4, 2e-4, 1e-4, 5e-5), 5
+        num_walkers, dts, seeds = 200000, (4e-4, 2e-4, 1e-4, 5e-5), 5
 
     # run tracking
     run_id = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -145,7 +145,7 @@ if __name__ == "__main__":
     c = np.sqrt(Lambda_0)
     c_err = Lambda_0_err / (2 * c)
     print(f"Lambda_0 = {Lambda_0:.4f} +/- {Lambda_0_err:.4f}")
-    print(f"c = {c:.4f} +/- {c_err:.4f}")
+    print(f"c = {c:.5f} +/- {c_err:.5f}")
 
     save_record({"run_id": run_id, "kind": "summary", "quick": quick, "num_walkers": num_walkers,
                  "dts": list(dts), "seeds": seeds, "scaling_Lambdas": scaling_lambdas,
