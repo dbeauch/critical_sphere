@@ -77,6 +77,8 @@ def growth_rate(R, D, alpha, beta, nu, num_walkers=10_000, dt_frac=1e-4, seed=0,
     tau = R**2 / D
     if dt is None:
         dt = dt_frac * tau
+
+    # can probably shorten this to save compute
     if t_burn is None:
         t_burn = 1.0 * tau
     if t_meas is None:
