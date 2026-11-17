@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from walkers import generate_walkers, diffuse, remove_external_walkers, resample, fit_growth_rate
-from estimate_c import escape_rate, extrapolate_dt, fit_extrapolation
+from find_c import interact, growth_rate, fit_critical_radius, sweep, extrapolate, CASES
 
 def test_generate_walkers():
     rng = np.random.default_rng(seed=535)
@@ -149,47 +149,52 @@ def test_fit_growth_rate_noisy():
     standard_error = s / (np.sqrt(ts.size) * np.std(ts))
     assert abs(fit_growth_rate(ts, log_pop) - (-9.87)) < 4 * standard_error, "Slope off by more than 4 stde"
 
-def test_escape_rate_kill():
-    # wall replaced by kill probability p per step
-    p = 0.01
+def test_interact_absorption_only():
+    # alpha only: each walker removed with probability alpha * dt, nothing added
+    rng = np.random.default_rng(seed=535)
+    num_walkers, alpha, dt = 200_000, 50.0, 1e-3
+    after = interact(np.zeros((num_walkers, 3)), alpha, 0.0, 2.0, dt, rng)
+    expected = num_walkers * alpha * dt
+    assert abs((num_walkers - len(after)) - expected) < 4 * np.sqrt(expected), "Absorbed fraction is not alpha * dt"
+
+def test_interact_branching_keeps_position():
+    # children start where their parent was
+    rng = np.random.default_rng(seed=535)
+    walkers = np.array([[1.0, 2.0, 3.0]] * 1000)
+    after = interact(walkers, 0.0, 50.0, 3.0, 1e-3, rng)
+    assert len(after) > len(walkers), "No walkers were added by branching"
+    assert np.all(after == [1.0, 2.0, 3.0]), "A child moved away from its parent"
+
+def test_growth_rate_no_escape():
+    # R so large nothing escapes: growth = log(1 + sigma dt) / dt, almost sigma
+    alpha, beta, nu = 0.5, 1.0, 2.5   # sigma = 1
     dt = 1e-3
-    rate = escape_rate(dt=dt, num_walkers=2000, seed=535, kill_prob=p)
-    assert abs(rate / (-np.log(1 - p) / dt) - 1) < 0.05, "Kill-mode rate is not -log(1 - p) / dt"
+    rate = growth_rate(R=1000.0, D=1.0, alpha=alpha, beta=beta, nu=nu, num_walkers=5000, seed=535,
+                       dt=dt, t_burn=0.0, t_meas=2.0)
+    assert abs(rate - np.log(1 + dt) / dt) < 0.05, "Growth without escape is not sigma"
 
-def test_escape_rate_wall():
-    # R = D = 1: time-step bias makes Lambda a bit under pi^2
-    Lambda = escape_rate(R=1.0, D=1.0, dt=1e-3, num_walkers=2000, seed=535)
-    assert 9.0 < Lambda < np.pi**2, "Lambda is not a bit under pi^2"
+def test_fit_critical_radius_noiseless():
+    radii = np.array([2.5, 2.75, 3.0, 3.25, 3.5])
+    R_crit, a, b = fit_critical_radius(radii, 1.5 - 9.87 / radii**2)
+    assert np.isclose(a, 1.5) and np.isclose(b, 9.87), "Line not recovered"
+    assert np.isclose(R_crit, np.sqrt(9.87 / 1.5)), "Zero crossing not recovered"
 
-def test_escape_rate_scaling():
-    # dt = dt_frac * tau and a shared seed: every run is the same walk rescaled, so Lambda agrees exactly
-    dt_frac = 1e-3
-    lambdas = []
-    for R, D in ((1.0, 1.0), (2.0, 1.0), (1.0, 3.0), (0.5, 0.2)):
-        tau = R**2 / D
-        lambdas.append(escape_rate(R=R, D=D, dt=dt_frac * tau, num_walkers=2000, seed=535) * R**2 / D)
-    assert np.allclose(lambdas, lambdas[0]), "Lambda = lambda_esc * R^2 / D depends on (R, D)"
+def test_extrapolate_noiseless():
+    dt_fracs = np.array([4e-4, 2e-4, 1e-4, 5e-5])
+    cs = 3.0 - 2.0 * np.sqrt(dt_fracs)
+    c_0, c_0_err, slope = extrapolate(dt_fracs, cs, [0.01] * 4)
+    assert np.isclose(c_0, 3.0) and np.isclose(slope, -2.0), "Straight line in sqrt(dt) not recovered"
+    assert c_0_err > 0, "Extrapolation uncertainty is not positive"
 
-def test_extrapolate_dt():
-    # Lambda rises as dt shrinks, and the dt -> 0 intercept sits above every measured Lambda
-    dts = (4e-3, 2e-3, 1e-3, 5e-4)
-    lambdas = [np.mean([escape_rate(dt=dt, num_walkers=2000, seed=seed) for seed in range(3)]) for dt in dts]
-    assert np.all(np.diff(lambdas) > 0), "Lambda does not rise as dt shrinks"
-
-    Lambda_0, Lambda_0_err = extrapolate_dt(dts=dts, seeds=3, num_walkers=2000)
-    assert Lambda_0 > lambdas[-1], "Extrapolated Lambda_0 is below the finest-dt Lambda"
-    assert Lambda_0_err > 0, "Extrapolation uncertainty is not positive"
-
-def test_fit_extrapolation():
-    # wall-shift model: Lambda(dt) = pi^2 / (1 + a sqrt(dt))^2, so the fit should return pi^2 exactly
-    dts = np.array([4e-4, 2e-4, 1e-4, 5e-5])
-    a = 0.5826 * np.sqrt(2)
-    means = np.pi**2 / (1 + a * np.sqrt(dts))**2
-
-    Lambda_0, Lambda_0_err, slope = fit_extrapolation(dts, means, 0.005)
-    assert np.isclose(Lambda_0, np.pi**2), "Noiseless model data not extrapolated to pi^2"
-    assert np.isclose(slope, a / np.pi), "Slope of 1/sqrt(Lambda) is not a / pi"
-    assert Lambda_0_err > 0, "Extrapolation uncertainty is not positive"
+def test_sweep_quick():
+    # coarse end-to-end run: c should land near 3, a bit low from the large time step
+    from concurrent.futures import ThreadPoolExecutor
+    D, alpha, beta, nu = CASES["A"]
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        radii, rates, cs = sweep(D, alpha, beta, nu, dt_frac=2e-3, seeds=2, first_seed=535, num_walkers=2000, pool=pool)
+    assert rates.shape == (2, len(radii)), "One rate per (seed, radius)"
+    assert np.all(np.diff(rates, axis=1) > 0), "Growth does not rise with R"
+    assert np.all((2.9 < cs) & (cs < 3.2)), "c is far from 3"
 
 if __name__ == "__main__":
     test_generate_walkers()
@@ -206,10 +211,11 @@ if __name__ == "__main__":
     test_fit_growth_rate_noiseless()
     test_fit_growth_rate_noisy()
 
-    test_escape_rate_kill()
-    test_escape_rate_wall()
-    test_escape_rate_scaling()
-    test_extrapolate_dt()
-    test_fit_extrapolation()
+    test_interact_absorption_only()
+    test_interact_branching_keeps_position()
+    test_growth_rate_no_escape()
+    test_fit_critical_radius_noiseless()
+    test_extrapolate_noiseless()
+    test_sweep_quick()
     
     print("Tests passed")
