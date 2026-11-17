@@ -71,14 +71,14 @@ def growth_rate(R, D, alpha, beta, nu, num_walkers=10_000, dt_frac=1e-4, seed=0,
     """
     Long-time growth rate of the full system at radius R
 
-    dt, t_burn, t_meas default to dt_frac, 0.3 and 1.0 times tau = R^2 / D
+    dt, t_burn, t_meas default to dt_frac, 1.0 and 1.0 times tau = R^2 / D
     burn-in lets the walkers settle from their uniform start into the shape the population keeps
     """
     tau = R**2 / D
     if dt is None:
         dt = dt_frac * tau
     if t_burn is None:
-        t_burn = 0.3 * tau
+        t_burn = 1.0 * tau
     if t_meas is None:
         t_meas = 1.0 * tau
 
@@ -163,7 +163,7 @@ if __name__ == "__main__":
     if quick:
         num_walkers, seeds, dt_fracs, case_dt_frac = 2000, 3, (4e-3, 2e-3, 1e-3), 1e-3
     else:
-        num_walkers, seeds, dt_fracs, case_dt_frac = 10_000, 8, (4e-4, 2e-4, 1e-4, 5e-5), 1e-4
+        num_walkers, seeds, dt_fracs, case_dt_frac = 10_000, 16, (4e-4, 2e-4, 1e-4, 5e-5), 1e-4
 
     # fresh seeds so reruns give independent data
     first_seed = int(np.random.default_rng().integers(2**31))
