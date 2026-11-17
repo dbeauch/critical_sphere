@@ -93,6 +93,23 @@ def scaling_check(pairs=((1.0, 1.0), (2.0, 1.0), (1.0, 3.0), (0.5, 0.2)), dt_fra
     return lambdas
 
 
+def fit_extrapolation(dts, means, sem):
+    """
+    Extrapolate Lambda(dt) to dt = 0 by fitting 1/sqrt(Lambda) vs sqrt(dt)
+
+    The wall sits effectively at R + a sqrt(dt), and Lambda = pi^2 / R_eff^2 at R = 1, so 1/sqrt(Lambda) is linear on sqrt(dt)
+    """
+    means = np.asarray(means, dtype=float)
+    y = 1 / np.sqrt(means)
+    y_err = np.broadcast_to(sem, means.shape) / (2 * means**1.5)  # d(L^-1/2) = dL / (2 L^3/2)
+
+    # cov="unscaled"
+    (slope, intercept), cov = np.polyfit(np.sqrt(dts), y, 1, w=1 / y_err, cov="unscaled")
+    Lambda_0 = 1 / intercept**2
+    Lambda_0_err = 2 * np.sqrt(cov[1, 1]) / intercept**3
+    return Lambda_0, Lambda_0_err, slope
+
+
 def extrapolate_dt(dts=(4e-4, 2e-4, 1e-4, 5e-5), seeds=5, num_walkers=20_000, first_seed=0, run_id=None):
     """
     Check 2: remove the time-step bias (R = D = 1)
@@ -109,19 +126,49 @@ def extrapolate_dt(dts=(4e-4, 2e-4, 1e-4, 5e-5), seeds=5, num_walkers=20_000, fi
     for dt, mean in zip(dts, means):
         print(f"  dt = {dt:.1e}  sqrt(dt) = {np.sqrt(dt):.4f}  Lambda = {mean:.3f} +/- {sem:.3f}")
 
-    # equal error bars
-    (slope, Lambda_0), cov = np.polyfit(np.sqrt(dts), means, 1, w=np.full(len(dts), 1 / sem), cov="unscaled")
-    Lambda_0_err = np.sqrt(cov[1, 1])
+    Lambda_0, Lambda_0_err, slope = fit_extrapolation(dts, means, sem)
     if run_id is not None:
         save_record({"run_id": run_id, "kind": "extrapolate_dt", "dts": list(dts), "seeds": seeds,
                      "first_seed": first_seed, "num_walkers": num_walkers, "means": means.tolist(), "sem": sem,
-                     "slope": slope, "Lambda_0": Lambda_0, "Lambda_0_err": Lambda_0_err})
-    print(f"  fit: Lambda = {Lambda_0:.3f} + ({slope:.1f}) * sqrt(dt)")
+                     "fit": "inv_sqrt_Lambda", "slope": slope, "Lambda_0": Lambda_0, "Lambda_0_err": Lambda_0_err})
+    print(f"  fit: 1/sqrt(Lambda) = {1 / np.sqrt(Lambda_0):.5f} + ({slope:.3f}) * sqrt(dt)  ->  Lambda_0 = {Lambda_0:.4f}")
     return Lambda_0, Lambda_0_err
+
+
+def combine_results(dts=(4e-4, 2e-4, 1e-4, 5e-5), path=RESULTS_PATH):
+    """
+    Combine every saved extrapolate_dt run with these dts into one estimate
+
+    Lambda at each dt is averaged across runs, weighted by 1 / sem^2, then extrapolated as in extrapolate_dt
+    Returns (c, c_err, number of runs combined)
+    """
+    records = [json.loads(line) for line in open(path)]
+    runs = [r for r in records if r["kind"] == "extrapolate_dt" and np.allclose(r["dts"], dts)]
+
+    means = np.array([r["means"] for r in runs])
+    weights = 1 / np.array([r["sem"] for r in runs])**2
+    combined = (weights[:, None] * means).sum(axis=0) / weights.sum()
+    combined_sem = 1 / np.sqrt(weights.sum())
+
+    Lambda_0, Lambda_0_err, _ = fit_extrapolation(dts, combined, combined_sem)
+    c = np.sqrt(Lambda_0)
+    c_err = Lambda_0_err / (2 * c)
+
+    print(f"Combined {len(runs)} runs (N = {sorted({r['num_walkers'] for r in runs})}):")
+    for dt, mean in zip(dts, combined):
+        print(f"  dt = {dt:.1e}  Lambda = {mean:.4f} +/- {combined_sem:.4f}")
+    print(f"  Lambda_0 = {Lambda_0:.4f} +/- {Lambda_0_err:.4f}")
+    print(f"  c = {c:.5f} +/- {c_err:.5f}")
+    return c, c_err, len(runs)
 
 
 if __name__ == "__main__":
     import sys
+
+    # python estimate_c.py combine: combine saved runs only, no new simulation
+    if sys.argv[1:] == ["combine"]:
+        combine_results()
+        sys.exit()
 
     # True: small-scale test
     # False: long running for a good estimate of c
@@ -157,3 +204,6 @@ if __name__ == "__main__":
                  "Lambda_0": Lambda_0, "Lambda_0_err": Lambda_0_err, "c": c, "c_err": c_err,
                  "seconds": time.perf_counter() - start})
     print(f"Saved to {RESULTS_PATH} (run_id {run_id})")
+
+    if not quick:
+        combine_results(dts=dts)

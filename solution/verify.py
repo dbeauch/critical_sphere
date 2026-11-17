@@ -4,7 +4,6 @@ Verify c against the full system: diffusion + ABSORPTION + BRANCHING + escape
 At R = c * sqrt(D / sigma) the growth rate is ~0 for very different params (alpha, beta, nu) that share the same sigma
 Goal: Sweep R, fit growth = a - b / R^2, and check a ~ sigma and b / D ~ Lambda
 """
-import json
 import time
 from datetime import datetime
 from pathlib import Path
@@ -12,7 +11,7 @@ from pathlib import Path
 import numpy as np
 
 from walkers import generate_walkers, diffuse, remove_external_walkers, resample, fit_growth_rate
-from estimate_c import save_record, RESULTS_PATH as ESTIMATE_C_PATH
+from estimate_c import save_record, combine_results, RESULTS_PATH as ESTIMATE_C_PATH
 
 VERIFY_PATH = Path(__file__).parent / "results" / "verify.jsonl"
 
@@ -96,12 +95,10 @@ def critical_radius(D, alpha, beta, nu, radii, seeds=2, first_seed=0, num_walker
 
 def best_c(path=ESTIMATE_C_PATH):
     """
-    Get the most precise large-scale c saved by estimate_c.py
+    c from all large-scale runs saved by estimate_c.py, combined
     """
-    summaries = [json.loads(line) for line in open(path)]
-    summaries = [r for r in summaries if r["kind"] == "summary" and not r["quick"]]
-    best = min(summaries, key=lambda r: r["c_err"])
-    return best["c"], best["c_err"]
+    c, c_err, _ = combine_results(path=path)
+    return c, c_err
 
 
 # Parameter sets chosen with same sigma, very different mixes,

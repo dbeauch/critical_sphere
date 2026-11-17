@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from walkers import generate_walkers, diffuse, remove_external_walkers, resample, fit_growth_rate
-from estimate_c import escape_rate, extrapolate_dt
+from estimate_c import escape_rate, extrapolate_dt, fit_extrapolation
 
 def test_generate_walkers():
     rng = np.random.default_rng(seed=535)
@@ -180,6 +180,17 @@ def test_extrapolate_dt():
     assert Lambda_0 > lambdas[-1], "Extrapolated Lambda_0 is below the finest-dt Lambda"
     assert Lambda_0_err > 0, "Extrapolation uncertainty is not positive"
 
+def test_fit_extrapolation():
+    # wall-shift model: Lambda(dt) = pi^2 / (1 + a sqrt(dt))^2, so the fit should return pi^2 exactly
+    dts = np.array([4e-4, 2e-4, 1e-4, 5e-5])
+    a = 0.5826 * np.sqrt(2)
+    means = np.pi**2 / (1 + a * np.sqrt(dts))**2
+
+    Lambda_0, Lambda_0_err, slope = fit_extrapolation(dts, means, 0.005)
+    assert np.isclose(Lambda_0, np.pi**2), "Noiseless model data not extrapolated to pi^2"
+    assert np.isclose(slope, a / np.pi), "Slope of 1/sqrt(Lambda) is not a / pi"
+    assert Lambda_0_err > 0, "Extrapolation uncertainty is not positive"
+
 if __name__ == "__main__":
     test_generate_walkers()
     test_remove_external_walkers()
@@ -199,5 +210,6 @@ if __name__ == "__main__":
     test_escape_rate_wall()
     test_escape_rate_scaling()
     test_extrapolate_dt()
+    test_fit_extrapolation()
     
     print("Tests passed")
